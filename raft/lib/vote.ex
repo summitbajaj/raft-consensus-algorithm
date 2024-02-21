@@ -39,10 +39,12 @@ def handle_vote_request_from_candidate(
   ) do
 
   # stepdown if candidate's term is greater than follower's term
+  follower_curr_term = follower.curr_term
+
   follower =
     case candidate_curr_term do
-      ^follower.curr_term -> follower
-      term when term > follower.curr_term -> stepdown(follower, term)
+      ^follower_curr_term -> follower
+      term when term > follower_curr_term -> stepdown(follower, term)
     end
 
   # vote for candidate if
