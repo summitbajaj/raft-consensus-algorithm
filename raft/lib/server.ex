@@ -29,11 +29,48 @@ def next(server) do
 
   server = receive do
 
-  # { :APPEND_ENTRIES_REQUEST, ...
+  # ___Append Entries Request
 
-  # { :APPEND_ENTRIES_REPLY, ...
+  # sending a heartbeat request
+  { :APPEND_ENTRIES_REQUEST} ->
+    s = Timer.restart_election_timer(s)
 
-  # { :APPEND_ENTRIES_TIMEOUT, ...
+  # new append request
+  { :APPEND_ENTRIES_REQUEST, leaderTerm, prevIndex, prevTerm, leaderEntries, commitIndex} ->
+    s = s
+      |> Timer.restart_election_timer()
+      |> AppendEntries.receive_append_entries_request(leaderTerm, prevIndex, prevTerm, leaderEntries, commitIndex)
+
+  # _____
+
+  # ___ Append Entries Reply
+
+  # response to append entries request from leader
+  { :APPEND_ENTRIES_REPLY, followerP, followerTerm, success, followerLastIndex} when s.role == :Leader ->
+    # if the follower's term is higher, step down
+    s = if followerTerm > curr_term do
+      s = Vote.stepdown(s, followerTerm)
+    else
+      s = AppendEntries.receive_append_entries_reply_from_follower(s, followerP, followerTerm, success, followerLastIndex)
+    end
+    s
+
+  # if the server is not a leader ignore
+  {:APPEND_ENTRIES_REPLY} -> s
+
+  # _____ Append Entries Timeout
+
+  # when append entries timer runs out -> resend the request
+  { :APPEND_ENTRIES_TIMEOUT, term, followerP} ->
+    # if server is still a leader, resend the request
+    s = if s.role == :LEADER do
+      s = s |> AppendEntries.send_entries_to_follower(followerP)
+      
+      # if not leader then just ignore
+    else
+      s
+    end
+  # ___
 
   # handling vote requests
 
