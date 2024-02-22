@@ -41,7 +41,7 @@ def handle_vote_request_from_candidate(
   # stepdown if candidate's term is greater than follower's term
   follower = if candidate_curr_term > follower.curr_term do
     follower = stepdown(follower, candidate_curr_term)
-    
+
     follower
   else
     follower
@@ -141,7 +141,7 @@ def handle_vote_request_from_candidate(
   end
 
   # when followers get a meesage from a new leader
-  def handle_new__leader(follower, leaderP, leader_curr_term) do
+  def handle_new_leader(follower, leaderP, leader_curr_term) do
 
     # If follower term < leader term, update follower's curr_term to match leader's
     follower = if follower.curr_term < leader_curr_term do
