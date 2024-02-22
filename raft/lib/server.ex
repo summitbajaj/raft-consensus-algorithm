@@ -91,7 +91,7 @@ def next(server) do
 
   # if the server is leader, handle client request
   { :CLIENT_REQUEST, m} when s.role == :LEADER ->
-    s = s |> ClientRequest.recieve_request_from_client(m)
+    s = s |> ClientRequest.process_request_from_client(m)
     s
   # if the server is not a leader -> inform client of leader
   { :CLIENT_REQUEST, m} ->
