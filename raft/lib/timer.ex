@@ -4,6 +4,22 @@
 
 defmodule Timer do
 
+# custom module _____________________________________________________________________________________
+
+def leader_create_aeTimer(server, followerP) do
+  server = Timer.cancel_append_entries_timer(server, followerP)
+
+  append_entries_timer = Process.send_after(
+    server.selfP,
+    { :APPEND_ENTRIES_TIMEOUT, server.curr_term, followerP },
+    server.config.append_entries_timeout
+  )
+
+  append_entries_timer
+end
+
+# _________________________________________________________________________________________
+
 # _________________________________________________________ restart_election_timer()
 def restart_election_timer(server) do  # election will be restarted if no VOTE or AE requests
   server = server |> Timer.cancel_election_timer()

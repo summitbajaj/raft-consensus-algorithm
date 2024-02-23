@@ -9,70 +9,71 @@ defmodule Vote do
 # 2. Increments current term
 # 3. Votes for self
 # 4. Sends vote requests to all other servers
-def handle_election_timeout(s) do
-  s = s
-  |> State.role(:CANDIDATE)
-  |> State.inc_term()
-  |> State.voted_for(s.server_num)
-  |> Timer.restart_election_timer()
+  def handle_election_timeout(s) do
+    s = s
+    |> State.role(:CANDIDATE)
+    |> State.inc_term()
+    |> State.voted_for(s.server_num)
+    |> State.add_to_voted_by(s.server_num)
+    |> Timer.restart_election_timer()
 
-# sending vote requests to other servers
-for sever <- s.servers do
-  if sever != s.selfP do
-    send sever, {:VOTE_REQUEST, State.get_info(s)}
-  end
-end
-
-s
-
-end
-
-# when sever receives :VOTE_REQUEST message from candidate that have their term more than or equal to follower's term
-# 1.
-def handle_vote_request_from_candidate(
-  follower, # receipient of the vote request
-  candidate_curr_term, # term of candidate
-  candidate_num, # num of candidate
-  candidate_id, # id of candidate
-  candidateLastLogTerm, # term of last log entry of candidate
-  candidateLastLogIndex # index of last log entry of candidate
-  ) do
-
-  # stepdown if candidate's term is greater than follower's term
-  follower = if candidate_curr_term > follower.curr_term do
-    follower = stepdown(follower, candidate_curr_term)
-
-    follower
-  else
-    follower
+  # sending vote requests to other servers
+  for server <- s.servers do
+    if server != s.selfP do
+      send server, {:VOTE_REQUEST, State.get_info(s)}
+    end
   end
 
+  s
 
-  # vote for candidate if
-  # 1. Candidate's log is at least as up-to-date as receiver's log
-  # 2. OR candidate's log is more up-to-date than receiver's log
+  end
 
-  followerLastLogTerm = Log.term_at(follower, Log.last_index(follower))
-  should_vote? =
-    follower.voted_for == nil and
-      (candidateLastLogTerm > followerLastLogTerm or
-         (candidateLastLogTerm == followerLastLogTerm and
-            candidateLastLogIndex >= Log.last_index(follower)))
+  # when sever receives :VOTE_REQUEST message from candidate that have their term more than or equal to follower's term
+  # 1.
+  def handle_vote_request_from_candidate(
+    follower, # receipient of the vote request
+    candidate_curr_term, # term of candidate
+    candidate_num, # num of candidate
+    candidate_id, # id of candidate
+    candidateLastLogTerm, # term of last log entry of candidate
+    candidateLastLogIndex # index of last log entry of candidate
+    ) do
 
-  follower =
-    if should_vote? do
+    # stepdown if candidate's term is greater than follower's term
+    follower = if candidate_curr_term > follower.curr_term do
+      follower = stepdown(follower, candidate_curr_term)
+
       follower
-      |> State.voted_for(candidate_num) # Vote for candidate
-      |> Timer.restart_election_timer() # Restart election timer
     else
-      follower # If not suited, do not vote and let election timer runout
+      follower
     end
 
-  # send vote reply to candidate if voted for them
-  if follower.voted_for == candidate_num do
-    send candidate_id, {:VOTE_REPLY, follower.server_num, follower.curr_term}
-  end
-  follower
+
+    # vote for candidate if
+    # 1. Candidate's log is at least as up-to-date as receiver's log
+    # 2. OR candidate's log is more up-to-date than receiver's log
+
+    followerLastLogTerm = Log.term_at(follower, Log.last_index(follower))
+    should_vote? =
+      follower.voted_for == nil and
+        (candidateLastLogTerm > followerLastLogTerm or
+          (candidateLastLogTerm == followerLastLogTerm and
+              candidateLastLogIndex >= Log.last_index(follower)))
+
+    follower =
+      if should_vote? do
+        follower
+        |> State.voted_for(candidate_num) # Vote for candidate
+        |> Timer.restart_election_timer() # Restart election timer
+      else
+        follower # If not suited, do not vote and let election timer runout
+      end
+
+    # send vote reply to candidate if voted for them
+    if follower.voted_for == candidate_num do
+      send candidate_id, {:VOTE_REPLY, follower.server_num, follower.curr_term}
+    end
+    follower
 
   end
 

@@ -126,7 +126,7 @@ defmodule AppendEntries do
   # Decrement follower's next_index when consistency check fails
     else
         s = State.next_index(s, followerP, max(s.next_index[followerP]-1, 1))
-        send_entries_to_followers(s, followerP)
+        send_entries_to_follower(s, followerP)
         s
     end
 
@@ -143,7 +143,7 @@ defmodule AppendEntries do
         end)}
       end
 
-      for {index, c} <- counter do
+      for {index, c} <- checker do
         if c >= s.majority do
           send s.databaseP, {:DB_REQUEST, Log.request_at(s, index), index}
         end

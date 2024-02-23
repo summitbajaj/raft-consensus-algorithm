@@ -49,6 +49,15 @@ end # initialise
 # log is implemented in Log module
 # 's' is an abbreviation for 'server' below
 
+# added custom code
+def get_info(s), do: [s.curr_term, s.server_num, s.selfP, Log.term_at(s, Log.last_index(s)), Log.last_index(s)]
+def add_append_entries_timer(s,v), do: Map.put(s, :append_entries_timers, v)
+def get_append_entries_timer(s, v), do: s.append_entries_timers[v] # returns a timer
+
+def get_next_index(s, pid), do: Map.get(s.next_index, pid, 1)
+def get_match_index(s, pid), do: Map.get(s.match_index, pid, 0)
+# _________________
+
 def leaderP(s, v)         do Map.put(s, :leaderP, v) end
 def election_timer(s, v)  do Map.put(s, :election_timer, v) end
 def curr_election(s, v)   do Map.put(s, :curr_election, v) end
