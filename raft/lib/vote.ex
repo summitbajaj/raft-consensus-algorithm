@@ -3,174 +3,142 @@
 # coursework, raft consensus, v2
 
 defmodule Vote do
+  # This function is called when an election timeout is received.
+  # It handles the transition of a server from follower to candidate.
+  def receive_election_timeout(server_state) do
+    # Transition to candidate role
+    candidate_state = server_state
+      |> State.role(:CANDIDATE)               # Change role to candidate
+      |> State.inc_term()                     # Increment current term
+      |> State.voted_for(server_state.server_num)        # Vote for self
+      |> State.add_to_voted_by(server_state.server_num)  # Add self to list of voters
+      |> Timer.restart_election_timer()       # Restart election timer
 
-# when server receives an :ELECTION_TIMEOUT message:
-# 1. Node gets promoted to a candidate role
-# 2. Increments current term
-# 3. Votes for self
-# 4. Sends vote requests to all other servers
-  def handle_election_timeout(s) do
-    s = s
-    |> State.role(:CANDIDATE)
-    |> State.inc_term()
-    |> State.voted_for(s.server_num)
-    |> State.add_to_voted_by(s.server_num)
-    |> Timer.restart_election_timer()
-
-  # sending vote requests to other servers
-  for server <- s.servers do
-    if server != s.selfP do
-      send server, {:VOTE_REQUEST, State.get_info(s)}
-    end
-  end
-
-  s
-
-  end
-
-  # when sever receives :VOTE_REQUEST message from candidate that have their term more than or equal to follower's term
-  # 1.
-  def handle_vote_request_from_candidate(
-    follower, # receipient of the vote request
-    candidate_curr_term, # term of candidate
-    candidate_num, # num of candidate
-    candidate_id, # id of candidate
-    candidateLastLogTerm, # term of last log entry of candidate
-    candidateLastLogIndex # index of last log entry of candidate
-    ) do
-
-    # stepdown if candidate's term is greater than follower's term
-    follower = if candidate_curr_term > follower.curr_term do
-      follower = stepdown(follower, candidate_curr_term)
-
-      follower
-    else
-      follower
-    end
-
-
-    # vote for candidate if
-    # 1. Candidate's log is at least as up-to-date as receiver's log
-    # 2. OR candidate's log is more up-to-date than receiver's log
-
-    followerLastLogTerm = Log.term_at(follower, Log.last_index(follower))
-    should_vote? =
-      follower.voted_for == nil and
-        (candidateLastLogTerm > followerLastLogTerm or
-          (candidateLastLogTerm == followerLastLogTerm and
-              candidateLastLogIndex >= Log.last_index(follower)))
-
-    follower =
-      if should_vote? do
-        follower
-        |> State.voted_for(candidate_num) # Vote for candidate
-        |> Timer.restart_election_timer() # Restart election timer
-      else
-        follower # If not suited, do not vote and let election timer runout
+    # Send vote requests to other servers except self
+    for server <- candidate_state.servers do
+      if server != candidate_state.selfP do
+        send server, { :VOTE_REQUEST, State.get_info(candidate_state) }
       end
-
-    # send vote reply to candidate if voted for them
-    if follower.voted_for == candidate_num do
-      send candidate_id, {:VOTE_REPLY, follower.server_num, follower.curr_term}
     end
-    follower
 
+    candidate_state # return updated server state
   end
 
-  # when candidate receives :VOTE_REPLY from other servers:
-  def handle_vote_reply_from_follower(
-    candidate, # candidate server
-    follower_num, # follower's server_num
-    follower_curr_term # follower's current term
-    ) do
-
-    # Stepdown if follower's term is larger
-    candidate = if candidate.curr_term < follower_curr_term do
-      stepdown(candidate, follower_curr_term)
-      candidate
+  # This function is called when a vote request is received from a candidate.
+  # It handles the voting process of a follower.
+  def receive_vote_request_from_candidate(follower_state, candidate_term, candidate_num, candidate_pid, candidate_last_log_term, candidate_last_log_index) do
+    # Step down if candidate term is greater
+    follower_state = if candidate_term > follower_state.curr_term do
+      follower_state = stepdown(follower_state, candidate_term)
+      follower_state
     else
-      candidate
+      follower_state
     end
 
-    # If candidates current term is same as followers, add the voter into voted_by
-    candidate = if candidate.curr_term == follower_curr_term do
-      candidate |> State.add_to_voted_by(follower_num)
+    # Vote for candidate if conditions are met
+    follower_last_log_term = Log.term_at(follower_state, Log.last_index(follower_state))
+    follower_state = if (follower_state.voted_for == nil) && ((candidate_last_log_term > follower_last_log_term) || (candidate_last_log_term == follower_last_log_term && candidate_last_log_index >= Log.last_index(follower_state))) do
+      follower_state
+        |> State.voted_for(candidate_num)     # Vote for candidate
+        |> Timer.restart_election_timer()     # Restart election timer
     else
-      candidate
+      follower_state                                # If not suited, do not vote and let election timer runout
     end
 
-    # Check if majority reached. If yes, become leader
-    candidate = if State.vote_tally(candidate) >= candidate.majority do
-      candidate = upgrade_to_leader(candidate)
-      candidate
+    # Send vote reply to candidate if voted for them
+    if follower_state.voted_for == candidate_num do
+      send candidate_pid, {:VOTE_REPLY, follower_state.server_num, follower_state.curr_term}
+    end
+
+    follower_state # return updated follower state
+  end
+
+  # This function is called when a vote reply is received from a follower.
+  # It handles the vote tallying process of a candidate.
+  def receive_vote_reply_from_follower(candidate_state, follower_num, follower_term) do
+    # Step down if follower's term is larger
+    candidate_state = if candidate_state.curr_term < follower_term do
+      stepdown(candidate_state, follower_term)
+      candidate_state
     else
-      candidate
+      candidate_state
+    end
+
+    # Add voter into voted_by list if terms match
+    candidate_state = if candidate_state.curr_term == follower_term do
+      candidate_state |> State.add_to_voted_by(follower_num)
+    else
+      candidate_state
+    end
+
+    # Become leader if majority vote is reached
+    candidate_state = if State.vote_tally(candidate_state) >= candidate_state.majority do
+      become_leader(candidate_state)
+      # # simulate leadership change by crashing leaders
+      # Process.exit(self(), :kill)
+    else
+      candidate_state
     end
   end
 
-  # upgrade a candidate to a leader
-  defp upgrade_to_leader(candidate) do
+  # This function is called to transition a candidate to a leader.
+  defp become_leader(candidate_state) do
+    # Update candidate's state
+    leader_state = candidate_state
+      |> State.role(:LEADER)                # Update role to leader
+      |> Timer.cancel_election_timer()      # Remove election timer (not needed for leaders)
+      |> State.init_next_index()            # Update it's next index with all of its followers to its log length
 
-    candidate = candidate
-      |> State.role(:LEADER)
-      |> Timer.cancel_election_timer()
-      |> State.init_next_index()
-
-
-    # append entries timer for leader to send append entries requests to followers to replicate logs
-    aeTimer =
-      for i <- candidate.servers,
+    # Build the append entries timer for its followers and append to candidate state
+    append_entries_timer =
+      for server <- leader_state.servers,
       into: Map.new
       do
-        if i != candidate.selfP do
-          {i, Timer.leader_create_aeTimer(candidate, i)}
+        if server != leader_state.selfP do
+          {server, Timer.leader_create_aeTimer(leader_state, server)}
         else
-          {i, nil}
+          {server, nil}
         end
       end
 
-    candidate = State.add_append_entries_timer(candidate, aeTimer)
+    leader_state = State.add_append_entries_timer(leader_state, append_entries_timer)
 
-    # announce leadership for this term to other nodes
-    for server <- candidate.servers do
-      if server != candidate.selfP do
-        send server, {:LEADER_ELECTED, candidate.selfP, candidate.curr_term}
+    # Announce leadership for this term to followers
+    for server <- leader_state.servers do
+      if server != leader_state.selfP do
+        send server, {:LEADER_ELECTED, leader_state.selfP, leader_state.curr_term}
       end
     end
 
-    candidate
+    leader_state # return updated leader state
   end
 
-  # when followers get a meesage from a new leader
-  def handle_new_leader(follower, leaderP, leader_curr_term) do
-
-    # If follower term < leader term, update follower's curr_term to match leader's
-    follower = if follower.curr_term < leader_curr_term do
-      State.curr_term(follower, leader_curr_term)
+  # This function is called when a follower receives a message from a new leader.
+  def receive_leader(follower_state, leader_pid, leader_term) do
+    # Update follower's term if it's less than leader's term
+    follower_state = if follower_state.curr_term < leader_term do
+      State.curr_term(follower_state, leader_term)
     else
-      follower
+      follower_state
     end
 
-    follower = follower
-      |> stepdown(leader_curr_term)
-      |> State.leaderP(leaderP)
+    follower_state = follower_state
+      |> stepdown(leader_term)   # Make sure server steps down in case if was a past leader/candidate
+      |> State.leaderP(leader_pid)       # Update the leaderP in State
 
-    follower
+    follower_state # return updated follower state
   end
 
-  # Used when received message from another server of a larger term.
-  def stepdown(server, term) do
+  # This function is called to transition a server to a follower when it receives a message from another server of a larger term.
+  def stepdown(server_state, term) do
+    follower_state = server_state
+      |>State.curr_term(term)                     # Update to latest term
+      |>State.role(:FOLLOWER)                     # Change role to Follower
+      |>State.voted_for(nil)                      # Clear any previous votes
+      |>State.new_voted_by()                      # Clear any voted_by  (if any, only for past :LEADERS)
+      |>Timer.cancel_all_append_entries_timers()  # Clear aeTimer       (if any, only for past :LEADERS)
+      |>Timer.restart_election_timer()            # Restart election timer
 
-    server = server
-      |>State.curr_term(term)
-      |>State.role(:FOLLOWER)
-      |>State.voted_for(nil)
-      |>State.new_voted_by()
-      |>Timer.cancel_all_append_entries_timers()
-      |>Timer.restart_election_timer()
-
-    server
+    follower_state # return updated follower state
   end
-
-
-end # Vote
+end

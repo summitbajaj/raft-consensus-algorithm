@@ -3,10 +3,11 @@
 # coursework, raft 
 # Makefile, v1
 
-SERVERS   = 5      	# 3 or more
-CLIENTS   = 5      	# 1 or more
+SERVERS   = 5   	# 3 or more
+CLIENTS   = 1      	# 1 or more
 TIMELIMIT = 15000	# milli-seconds(ms) to quit after
 PARAMS    = default	# e.g. default, slower, faster, etc
+# MAXCLIENTREQUESTS = 5000
 
 DEBUG_OPTIONS = "none"
 DEBUG_LEVEL   = 0
